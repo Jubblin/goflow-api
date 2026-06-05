@@ -1,0 +1,20 @@
+# VCS
+.git
+.gitignore
+
+# Local build artifacts
+/server
+/goflow-api
+*.exe
+
+# SQLite databases (regenerated from /data at runtime)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Local capture data — mount it as a volume instead of baking it in
+/data/*.json
+
+# Docs/editor
+.DS_Store

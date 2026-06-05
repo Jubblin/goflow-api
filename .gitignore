@@ -1,0 +1,17 @@
+# Binaries
+/server
+/goflow-api
+*.exe
+
+# SQLite database (regenerated from data/ on startup)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Data captures — keep the directory, ignore large goflow2 dumps
+/data/*.json
+!/data/.gitkeep
+
+# Go
+/vendor/

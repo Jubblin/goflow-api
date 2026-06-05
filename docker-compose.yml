@@ -1,0 +1,15 @@
+services:
+  goflow-api:
+    build: .
+    image: goflow-api:latest
+    container_name: goflow-api
+    ports:
+      - "8080:8080"
+    volumes:
+      # goflow2*.json captures are read from here; the SQLite db is written here too.
+      - ./data:/data
+    environment:
+      DATA_DIR: /data
+      DB_PATH: /data/goflow.db
+      LISTEN_ADDR: ":8080"
+    restart: unless-stopped

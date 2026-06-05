@@ -1,0 +1,243 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "goflow2 REST API",
+    "description": "Query goflow2 flow exports (NDJSON files matching `goflow2*.json`) with filtering and pagination.",
+    "version": "1.0.0"
+  },
+  "tags": [
+    { "name": "flows", "description": "Query ingested flow records" },
+    { "name": "files", "description": "Inspect and reload ingested capture files" },
+    { "name": "system", "description": "Service health" }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": ["system"],
+        "summary": "Liveness probe",
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "description": "Service is up",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Health" },
+                "example": { "status": "ok" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/files": {
+      "get": {
+        "tags": ["files"],
+        "summary": "List ingested capture files",
+        "operationId": "listFiles",
+        "responses": {
+          "200": {
+            "description": "Ingested files with row counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "files": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/FileInfo" }
+                    }
+                  }
+                },
+                "example": {
+                  "files": [
+                    { "file": "goflow2.json", "mtime_ns": 1780649525000000000, "size": 1023676, "row_count": 1054 }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reload": {
+      "post": {
+        "tags": ["files"],
+        "summary": "Re-scan the data directory and ingest new/changed files",
+        "description": "Discovers `goflow2*.json` files; files whose modification time and size are unchanged are skipped.",
+        "operationId": "reload",
+        "responses": {
+          "200": {
+            "description": "Reload summary",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReloadResult" },
+                "example": {
+                  "discovered": ["goflow2.json"],
+                  "ingested": null,
+                  "skipped": ["goflow2.json"],
+                  "total_rows": 1054
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ingestion error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/flows": {
+      "get": {
+        "tags": ["flows"],
+        "summary": "Query flows with filters and pagination",
+        "operationId": "queryFlows",
+        "parameters": [
+          {
+            "name": "page", "in": "query",
+            "description": "1-based page number",
+            "schema": { "type": "integer", "minimum": 1, "default": 1 }
+          },
+          {
+            "name": "page_size", "in": "query",
+            "description": "Records per page (capped at 500)",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 500, "default": 50 }
+          },
+          {
+            "name": "file", "in": "query",
+            "description": "Restrict to one source filename",
+            "schema": { "type": "string" },
+            "example": "goflow2.json"
+          },
+          {
+            "name": "src_addr", "in": "query",
+            "description": "Exact source IP match",
+            "schema": { "type": "string" },
+            "example": "10.2.254.48"
+          },
+          {
+            "name": "dst_addr", "in": "query",
+            "description": "Exact destination IP match",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "proto", "in": "query",
+            "description": "Exact protocol match",
+            "schema": { "type": "string", "example": "TCP" }
+          },
+          {
+            "name": "type", "in": "query",
+            "description": "Record type, e.g. IPFIX",
+            "schema": { "type": "string", "example": "IPFIX" }
+          },
+          {
+            "name": "src_port", "in": "query",
+            "description": "Exact source port match",
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "dst_port", "in": "query",
+            "description": "Exact destination port match",
+            "schema": { "type": "integer", "example": 443 }
+          },
+          {
+            "name": "bytes_min", "in": "query",
+            "description": "Minimum byte count (inclusive)",
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "bytes_max", "in": "query",
+            "description": "Maximum byte count (inclusive)",
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "q", "in": "query",
+            "description": "Substring match across src_addr, dst_addr, proto",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of matching flow records",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/FlowsResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "invalid src_port: strconv.ParseInt: parsing \"abc\": invalid syntax" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Health": {
+        "type": "object",
+        "properties": { "status": { "type": "string", "example": "ok" } }
+      },
+      "FileInfo": {
+        "type": "object",
+        "properties": {
+          "file": { "type": "string", "description": "Source filename" },
+          "mtime_ns": { "type": "integer", "format": "int64", "description": "File modification time (unix nanoseconds)" },
+          "size": { "type": "integer", "format": "int64", "description": "File size in bytes" },
+          "row_count": { "type": "integer", "format": "int64", "description": "Number of ingested records" }
+        }
+      },
+      "ReloadResult": {
+        "type": "object",
+        "properties": {
+          "discovered": { "type": "array", "items": { "type": "string" }, "description": "All matching files found" },
+          "ingested": { "type": "array", "nullable": true, "items": { "type": "string" }, "description": "Files (re)ingested this pass" },
+          "skipped": { "type": "array", "nullable": true, "items": { "type": "string" }, "description": "Files unchanged since last ingest" },
+          "total_rows": { "type": "integer", "format": "int64" }
+        }
+      },
+      "Pagination": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer" },
+          "page_size": { "type": "integer" },
+          "total": { "type": "integer", "format": "int64" },
+          "total_pages": { "type": "integer", "format": "int64" }
+        }
+      },
+      "Flow": {
+        "type": "object",
+        "description": "A goflow2 flow record, returned verbatim from the source file. Common fields are listed; additional goflow2 fields are passed through.",
+        "additionalProperties": true,
+        "properties": {
+          "type": { "type": "string", "example": "IPFIX" },
+          "time_received_ns": { "type": "integer", "format": "int64" },
+          "bytes": { "type": "integer", "format": "int64" },
+          "packets": { "type": "integer", "format": "int64" },
+          "src_addr": { "type": "string", "example": "10.2.254.48" },
+          "dst_addr": { "type": "string", "example": "104.18.35.41" },
+          "proto": { "type": "string", "example": "TCP" },
+          "src_port": { "type": "integer", "example": 56813 },
+          "dst_port": { "type": "integer", "example": 443 }
+        }
+      },
+      "FlowsResponse": {
+        "type": "object",
+        "properties": {
+          "data": { "type": "array", "items": { "$ref": "#/components/schemas/Flow" } },
+          "pagination": { "$ref": "#/components/schemas/Pagination" }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": { "error": { "type": "string" } }
+      }
+    }
+  }
+}
