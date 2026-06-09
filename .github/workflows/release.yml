@@ -86,6 +86,15 @@ jobs:
           stage darwin_arm64 goflow-api-darwin-arm64
           stage windows_amd64 goflow-api-windows-amd64.exe
 
+      - name: Upload linux release binaries
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-binaries-linux
+          path: |
+            dist/goflow-api-linux-amd64
+            dist/goflow-api-linux-arm64
+          retention-days: 1
+
       - name: Publish snapshot GitHub release
         if: steps.release.outputs.snapshot == 'true'
         env:
@@ -138,6 +147,12 @@ jobs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v6
+
+      - name: Download linux release binaries
+        uses: actions/download-artifact@v8
+        with:
+          name: release-binaries-linux
+          path: dist
 
       - name: Set image reference
         run: echo "IMAGE=${{ env.REGISTRY }}/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
