@@ -212,7 +212,7 @@ GitHub Actions workflows under [`.github/workflows/`](.github/workflows/) are sc
 | [`docker.yml`](.github/workflows/docker.yml) | Push/PR to `main` | Dockerfile lint, image build, container scan |
 | [`release.yml`](.github/workflows/release.yml) | Tag `v*` or CI call | GoReleaser binaries, GHCR image, Cosign signing |
 
-[`.goreleaser.yaml`](.goreleaser.yaml) and [Dependabot](.github/dependabot.yml) are also present.
+[`.goreleaser.yaml`](.goreleaser.yaml) is also present. Dependency updates are handled by [Renovate](https://github.com/renovatebot/renovate).
 
 The [`Makefile`](Makefile) provides `build`, `build-platform`, `test`, and `sbom` targets.
 Binaries are named `goflow-api` and built from [`cmd/server`](cmd/server/main.go).
