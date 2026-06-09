@@ -1,6 +1,6 @@
 module github.com/richardw/goflow-api
 
-go 1.26.2
+go 1.26.4
 
 require modernc.org/sqlite v1.51.0
 

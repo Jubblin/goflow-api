@@ -66,12 +66,12 @@ func Open(dsn string) (*Store, error) {
 		"PRAGMA temp_store=MEMORY;",
 	} {
 		if _, err := db.Exec(pragma); err != nil {
-			db.Close()
+			_ = db.Close()
 			return nil, fmt.Errorf("pragma %q: %w", pragma, err)
 		}
 	}
 	if _, err := db.Exec(schema); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
 	return &Store{db: db}, nil
@@ -113,7 +113,7 @@ func (s *Store) ListFiles(ctx context.Context) ([]FileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []FileInfo
 	for rows.Next() {
@@ -132,7 +132,7 @@ func (s *Store) DeleteFile(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM flows WHERE file = ?`, path); err != nil {
 		return err
@@ -240,7 +240,7 @@ func (s *Store) QueryFlows(ctx context.Context, q FlowQuery) (total int64, flows
 	if err != nil {
 		return 0, nil, fmt.Errorf("select flows: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	flows = make([]json.RawMessage, 0, q.PageSize)
 	for rows.Next() {

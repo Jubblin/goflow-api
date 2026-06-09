@@ -113,7 +113,7 @@ func (l *Loader) ingestFile(ctx context.Context, path, name string) (int64, erro
 	if err != nil {
 		return 0, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxLineBytes)
@@ -132,7 +132,7 @@ func (l *Loader) ingestFile(ctx context.Context, path, name string) (int64, erro
 				(file, type, src_addr, dst_addr, proto, src_port, dst_port, bytes, packets, time_received_ns, raw_json)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return total, err
 		}
 
@@ -162,15 +162,15 @@ func (l *Loader) ingestFile(ctx context.Context, path, name string) (int64, erro
 
 			if _, err := stmt.ExecContext(ctx, name, fl.Type, fl.SrcAddr, fl.DstAddr,
 				fl.Proto, fl.SrcPort, fl.DstPort, fl.Bytes, fl.Packets, fl.TimeReceivedNs, string(raw)); err != nil {
-				stmt.Close()
-				tx.Rollback()
+				_ = stmt.Close()
+				_ = tx.Rollback()
 				return total, err
 			}
 			inBatch++
 			total++
 		}
 
-		stmt.Close()
+		_ = stmt.Close()
 		if err := tx.Commit(); err != nil {
 			return total, err
 		}

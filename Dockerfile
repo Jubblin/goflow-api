@@ -1,42 +1,26 @@
 # syntax=docker/dockerfile:1
 
-# --- Build stage -------------------------------------------------------------
-# Pure-Go build (modernc.org/sqlite needs no CGO), so we can produce a fully
-# static binary and run it on a minimal image.
-FROM golang:1.26-alpine AS build
+# Distroless runtime image. Expects GoReleaser linux binaries in dist/:
+#   dist/goflow-api-linux-amd64
+#   dist/goflow-api-linux-arm64
+# CI and release workflows stage the amd64 binary; release builds multi-arch.
 
-WORKDIR /src
+FROM gcr.io/distroless/static-debian12:nonroot
 
-# Cache module downloads separately from the source for faster rebuilds.
-COPY go.mod go.sum ./
-RUN go mod download
+ARG TARGETARCH
+COPY dist/goflow-api-linux-${TARGETARCH} /usr/local/bin/goflow-api
 
-COPY . .
+USER nonroot:nonroot
+WORKDIR /home/nonroot
 
-ENV CGO_ENABLED=0 GOOS=linux
-RUN go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
-
-# --- Runtime stage -----------------------------------------------------------
-FROM alpine:3.20
-
-# Run as an unprivileged user that owns the data directory.
-RUN addgroup -S app \
-    && adduser -S -G app app \
-    && mkdir -p /data \
-    && chown app:app /data
-
-COPY --from=build /out/server /usr/local/bin/server
-
-USER app
-
-# Defaults read by cmd/server (overridable at run time).
 ENV DATA_DIR=/data \
-    DB_PATH=/data/goflow.db \
-    LISTEN_ADDR=:8080
+	DB_PATH=/data/goflow.db \
+	LISTEN_ADDR=:8080
 
 EXPOSE 8080
-
-# Mount goflow2*.json captures here; the SQLite db is written here too.
 VOLUME ["/data"]
 
-ENTRYPOINT ["server"]
+ENTRYPOINT ["/usr/local/bin/goflow-api"]
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+	CMD ["/usr/local/bin/goflow-api", "-version"]

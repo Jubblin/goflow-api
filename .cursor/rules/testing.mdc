@@ -1,0 +1,11 @@
+---
+description: Unit test conventions for goflow-api
+globs: "**/*_test.go,cmd/server/**,internal/**"
+---
+
+# Testing
+
+- Place tests next to the code under test (`foo_test.go` in the same package).
+- Use table-driven tests for handlers, store filters, and ingest edge cases.
+- Run `go test -buildvcs=false ./...` locally; CI runs the same via `make test`.
+- Prefer testing pure logic (query building, pagination math, NDJSON line parsing) over full HTTP integration unless needed.

@@ -1,0 +1,62 @@
+version: 2
+
+project_name: goflow-api
+
+snapshot:
+  # Tag is already v*-snapshot from the workflow; avoid appending -snapshot twice.
+  version_template: "{{ .Tag }}"
+
+before:
+  hooks:
+    - go mod download
+    - go test -buildvcs=false ./...
+    - go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.10.0
+
+builds:
+  - id: goflow-api
+    main: ./cmd/server
+    binary: goflow-api
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/richardw/goflow-api/internal/version.Version={{.Version}}
+      - -X github.com/richardw/goflow-api/internal/version.Commit={{.Commit}}
+      - -X github.com/richardw/goflow-api/internal/version.Date={{.Date}}
+
+archives:
+  - id: binaries
+    ids:
+      - goflow-api
+    formats:
+      - binary
+    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: sha256sum.txt
+
+sboms:
+  - id: module
+    documents:
+      - sbom.cyclonedx.json
+    artifacts: any
+    cmd: cyclonedx-gomod
+    args: ["mod", "-licenses", "-json", "-output", "$document", "../"]
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"
+
+release:
+  name_template: "{{ .ProjectName }} {{ .Tag }}"
