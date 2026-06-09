@@ -10,16 +10,25 @@ import (
 	"os"
 	"time"
 
+	"fmt"
+
 	"github.com/richardw/goflow-api/internal/api"
 	"github.com/richardw/goflow-api/internal/ingest"
 	"github.com/richardw/goflow-api/internal/store"
+	"github.com/richardw/goflow-api/internal/version"
 )
 
 func main() {
+	showVersion := flag.Bool("version", false, "print version and exit")
 	dataDir := flag.String("data-dir", envOr("DATA_DIR", "./data"), "directory containing goflow2*.json files")
 	listenAddr := flag.String("listen", envOr("LISTEN_ADDR", ":8080"), "HTTP listen address")
 	dbPath := flag.String("db", envOr("DB_PATH", "./goflow.db"), "SQLite database path (use :memory: for ephemeral)")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("goflow-api %s (commit %s, built %s)\n", version.Version, version.Commit, version.Date)
+		return
+	}
 
 	st, err := store.Open(*dbPath)
 	if err != nil {

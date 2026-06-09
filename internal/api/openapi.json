@@ -2,9 +2,12 @@
   "openapi": "3.0.3",
   "info": {
     "title": "goflow2 REST API",
-    "description": "Query goflow2 flow exports (NDJSON files matching `goflow2*.json`) with filtering and pagination.",
+    "description": "Query goflow2 flow exports (NDJSON files matching `goflow2*.json`) with filtering and pagination. Interactive documentation is served at `/docs/` (Swagger UI, vendored offline assets). The root path `/` and `/docs` redirect to `/docs/`.",
     "version": "1.0.0"
   },
+  "servers": [
+    { "url": "http://localhost:8080", "description": "Local default" }
+  ],
   "tags": [
     { "name": "flows", "description": "Query ingested flow records" },
     { "name": "files", "description": "Inspect and reload ingested capture files" },
@@ -35,6 +38,10 @@
         "summary": "List ingested capture files",
         "operationId": "listFiles",
         "responses": {
+          "500": {
+            "description": "Database error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
           "200": {
             "description": "Ingested files with row counts",
             "content": {
@@ -173,6 +180,10 @@
                 "example": { "error": "invalid src_port: strconv.ParseInt: parsing \"abc\": invalid syntax" }
               }
             }
+          },
+          "500": {
+            "description": "Database error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
           }
         }
       }

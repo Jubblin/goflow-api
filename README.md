@@ -1,59 +1,32 @@
 # goflow-api
 
-A small REST API (Go) that ingests [goflow2](https://github.com/netsampler/goflow2) flow
-exports and serves them as JSON with filtering and pagination.
+A REST API (Go) that ingests [goflow2](https://github.com/netsampler/goflow2) flow exports and
+serves them as JSON with filtering and pagination.
 
-It discovers files named `goflow2*.json` (prefix `goflow2`, suffix `.json`) in a data
-directory, loads their newline-delimited JSON (NDJSON) records into SQLite, and exposes
-query endpoints over HTTP.
+**Repository:** https://github.com/Jubblin/goflow-api
+
+It discovers files named `goflow2*.json` in a data directory, loads their newline-delimited JSON
+(NDJSON) records into SQLite, and exposes query endpoints over HTTP. An embedded Swagger UI is
+served at `/docs/` (fully offline — vendored assets, no CDN).
 
 ## Requirements
 
-- Go 1.22+ (uses `net/http` method-based routing)
-- No CGO — SQLite is provided by the pure-Go `modernc.org/sqlite` driver
+- Go **1.26+** (see `go.mod`; uses Go 1.22+ `net/http` method-based routing)
+- No CGO — SQLite via the pure-Go [`modernc.org/sqlite`](https://pkg.go.dev/modernc.org/sqlite) driver
 
-## Layout
-
-```text
-goflow-api/
-  cmd/server/main.go        # flags, startup ingest, HTTP server
-  internal/
-    model/flow.go           # Flow struct (typed indexed fields)
-    ingest/loader.go        # discover goflow2*.json, NDJSON -> SQLite
-    store/store.go          # schema, dynamic WHERE filters, COUNT + LIMIT/OFFSET
-    api/router.go           # routes + logging middleware
-    api/handlers.go         # JSON responses, query validation
-  data/                     # put your goflow2*.json files here
-```
-
-## Data
-
-Place capture files in `data/`. Any filename matching `goflow2*.json` is picked up,
-for example:
-
-- `goflow2.json`
-- `goflow2-2026-06-04.json`
-- `goflow2 (1).json`
-
-Files are expected to be NDJSON (one flow object per line), which is goflow2's default
-JSON transport output. The full original record for each line is preserved and returned
-verbatim by the API; a subset of fields is additionally indexed for fast filtering.
-
-On startup (and on `POST /api/v1/reload`) each file's modification time and size are
-recorded, so unchanged files are skipped on subsequent runs and only new/changed files
-are re-ingested. The first ingest of a very large capture (e.g. a 1.5 GB file) may take
-a few minutes; afterwards it is skipped.
-
-## Run
+## Quick start
 
 ```bash
-# from the project root
+# place captures in data/ (see Data below), then:
 go run ./cmd/server
+
 # or build a binary
-go build -o server ./cmd/server && ./server
+go build -buildvcs=false -o server ./cmd/server && ./server
 ```
 
-### Configuration
+Open http://localhost:8080/docs/ for interactive API documentation.
+
+## Configuration
 
 | Flag | Env | Default | Purpose |
 |------|-----|---------|---------|
@@ -61,58 +34,64 @@ go build -o server ./cmd/server && ./server
 | `-listen` | `LISTEN_ADDR` | `:8080` | HTTP listen address |
 | `-db` | `DB_PATH` | `./goflow.db` | SQLite path (use `:memory:` for ephemeral) |
 
-## Docker
+## Project layout
 
-A multi-stage [`Dockerfile`](Dockerfile) builds a static binary (no CGO) and runs it on a
-minimal Alpine image as an unprivileged user.
-
-```bash
-# build
-docker build -t goflow-api:latest .
-
-# run: mount your goflow2*.json captures into /data and publish the port
-docker run --rm -p 8080:8080 -v "$PWD/data:/data" goflow-api:latest
+```text
+goflow-api/
+  cmd/server/main.go              # flags, startup ingest, HTTP server
+  internal/
+    model/flow.go                 # Flow struct (typed indexed fields)
+    ingest/loader.go              # discover goflow2*.json, NDJSON → SQLite
+    store/store.go                # schema, filters, COUNT + LIMIT/OFFSET
+    api/
+      handlers.go                 # JSON responses, query validation
+      router.go                   # routes + request logging
+      docs.go                     # embed OpenAPI spec + Swagger UI assets
+      openapi.json                # OpenAPI 3 specification
+      swaggerui/                  # vendored swagger-ui-dist@5.17.14
+  data/                           # goflow2*.json captures (gitignored)
+  Dockerfile                      # multi-stage build (main branch)
+  docker-compose.yml              # local container deployment
+  .github/workflows/              # CI, Docker, release (see Development)
 ```
 
-Inside the container the defaults are `DATA_DIR=/data`, `DB_PATH=/data/goflow.db`, and
-`LISTEN_ADDR=:8080`; override any of them with `-e`. `/data` is declared as a volume, so
-mount the directory holding your capture files there. To keep `/data` read-only, point the
-database elsewhere, e.g. `-v "$PWD/data:/data:ro" -e DB_PATH=/tmp/goflow.db`.
+## Data
 
-### docker compose
+Place capture files in `data/`. Any filename matching `goflow2*.json` is picked up, for example:
 
-A [`docker-compose.yml`](docker-compose.yml) wires up the build, the `./data` volume, and
-port `8080`:
+- `goflow2.json`
+- `goflow2-2026-06-04.json`
+- `goflow2 (1).json`
 
-```bash
-docker compose up --build      # build and start
-docker compose up -d           # detached
-docker compose logs -f         # follow logs
-docker compose down            # stop
-```
+Files are expected to be **NDJSON** (one flow object per line), which is goflow2's default JSON
+transport output. The full original record for each line is preserved in `raw_json` and returned
+verbatim by the API; a subset of fields is additionally indexed for fast filtering.
+
+On startup (and on `POST /api/v1/reload`) each file's modification time and size are recorded,
+so unchanged files are skipped on subsequent runs. The first ingest of a very large capture
+(e.g. a 1.5 GB file) may take a few minutes; afterwards it is skipped.
+
+Malformed JSON lines are logged and skipped so a single bad record does not abort ingestion.
 
 ## API documentation (Swagger UI)
 
-Interactive docs are served by the app itself:
+| Path | Purpose |
+|------|---------|
+| `GET /` | Redirects to `/docs/` |
+| `GET /docs` | Redirects to `/docs/` (301) |
+| `GET /docs/` | Swagger UI (vendored, offline) |
+| `GET /openapi.json` | OpenAPI 3 specification |
 
-- `GET /docs` — Swagger UI (the root path `/` redirects here)
-- `GET /openapi.json` — the OpenAPI 3 specification
-
-Open `http://localhost:8080/docs` (or `http://<host>:8080/docs` for a remote deployment)
-to browse endpoints and use "Try it out". Both the OpenAPI spec and the Swagger UI assets
-(pinned `swagger-ui-dist@5.17.14`, vendored under `internal/api/swaggerui/`) are embedded
-in the binary, so the docs page works fully offline with no CDN or internet dependency.
+The trailing slash on `/docs/` matters — relative asset URLs resolve correctly only there.
 
 ## Endpoints
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET`  | `/health` | Liveness probe |
-| `GET`  | `/api/v1/files` | List ingested files with row counts |
+| `GET` | `/health` | Liveness probe |
+| `GET` | `/api/v1/files` | List ingested files with row counts |
 | `POST` | `/api/v1/reload` | Re-scan `data/` and ingest new/changed files |
-| `GET`  | `/api/v1/flows` | Query flows with filters + pagination |
-| `GET`  | `/docs` | Swagger UI |
-| `GET`  | `/openapi.json` | OpenAPI 3 spec |
+| `GET` | `/api/v1/flows` | Query flows with filters + pagination |
 
 ### `GET /api/v1/flows` query parameters
 
@@ -128,8 +107,8 @@ in the binary, so the docs page works fully offline with no CDN or internet depe
 | `bytes_min`, `bytes_max` | Inclusive numeric range on `bytes` |
 | `q` | Substring match across `src_addr`, `dst_addr`, `proto` |
 
-Invalid integer parameters return `400` with a JSON error body. A page beyond the result
-range returns `200` with an empty `data` array.
+Invalid integer parameters return `400` with a JSON error body. A page beyond the result range
+returns `200` with an empty `data` array.
 
 ### Response envelope
 
@@ -170,8 +149,90 @@ curl 'http://localhost:8080/api/v1/flows?file=goflow2.json&page=1&page_size=50'
 curl -X POST 'http://localhost:8080/api/v1/reload'
 ```
 
+## Docker
+
+### docker compose (local development)
+
+The [`Dockerfile`](Dockerfile) on `main` is a multi-stage build: compile a static Go binary, then
+run it on Alpine as an unprivileged `app` user with `/data` as a volume.
+
+```bash
+docker compose up --build      # build and start
+docker compose up -d           # detached
+docker compose logs -f         # follow logs
+docker compose down            # stop
+```
+
+Inside the container the defaults are `DATA_DIR=/data`, `DB_PATH=/data/goflow.db`, and
+`LISTEN_ADDR=:8080`. Mount your capture directory at `/data`. To keep `/data` read-only, point
+the database elsewhere, e.g. `-e DB_PATH=/tmp/goflow.db`.
+
+### Manual image build
+
+```bash
+docker build -t goflow-api:latest .
+docker run --rm -p 8080:8080 -v "$PWD/data:/data" goflow-api:latest
+```
+
+## Development
+
+### Build and verify
+
+```bash
+go build -buildvcs=false ./...
+go vet ./...
+go test -buildvcs=false ./...
+```
+
+### Pre-commit
+
+[`.pre-commit-config.yaml`](.pre-commit-config.yaml) runs trailing-whitespace, YAML checks,
+`golangci-lint`, `go vet`, and Hadolint (on `Dockerfile` changes):
+
+```bash
+pre-commit install
+pre-commit run --all-files
+```
+
+A [`.golangci.yml`](.golangci.yml) config is expected by pre-commit but may not yet be present —
+add one before enabling full lint locally.
+
+### Editor
+
+[`.vscode/extensions.json`](.vscode/extensions.json) recommends the Go, golangci-lint, and
+EditorConfig extensions.
+
+## CI/CD and releases
+
+GitHub Actions workflows under [`.github/workflows/`](.github/workflows/) are scaffolded for:
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| [`ci.yml`](.github/workflows/ci.yml) | Push/PR to `main` | Test, lint, cross-compile, SBOM, Trivy; snapshot release on push |
+| [`docker.yml`](.github/workflows/docker.yml) | Push/PR to `main` | Dockerfile lint, image build, container scan |
+| [`release.yml`](.github/workflows/release.yml) | Tag `v*` or CI call | GoReleaser binaries, GHCR image, Cosign signing |
+
+[`.goreleaser.yaml`](.goreleaser.yaml) and [Dependabot](.github/dependabot.yml) are also present.
+
+The [`Makefile`](Makefile) provides `build`, `build-platform`, `test`, and `sbom` targets.
+Binaries are named `goflow-api` and built from [`cmd/server`](cmd/server/main.go).
+Container images publish to `ghcr.io/jubblin/goflow-api`.
+
+### Repository controls
+
+On GitHub, `main` is protected:
+
+- Pull requests required (1 approval), conversation resolution, linear history
+- Squash-only merges; head branches deleted after merge
+- Force-push and branch deletion blocked
+
+## Contributing
+
+1. Branch from `main` (e.g. `feature/my-change`).
+2. Make changes; run `go build -buildvcs=false ./...` and `go vet ./...`.
+3. Open a pull request using the [PR template](.github/pull_request_template.md).
+
 ## Notes
 
-- Lines that fail to parse as JSON are skipped (logged) so a single malformed record does
-  not abort ingestion of the rest of a file.
-- The SQLite database file (`goflow.db`) is regenerated from `data/` and is gitignored.
+- The SQLite database (`goflow.db`) is regenerated from `data/` and is gitignored.
+- Capture files (`data/*.json`) are gitignored; only `data/.gitkeep` is tracked.

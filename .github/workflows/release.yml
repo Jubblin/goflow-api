@@ -1,0 +1,237 @@
+name: Release
+
+on:
+  workflow_call:
+  push:
+    tags:
+      - "v*"
+
+permissions: {}
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  goreleaser:
+    name: GoReleaser
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      actions: write
+    outputs:
+      release_tag: ${{ steps.release.outputs.tag }}
+      is_snapshot: ${{ steps.release.outputs.snapshot }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set release metadata
+        id: release
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+            echo "snapshot=false" >> "$GITHUB_OUTPUT"
+          else
+            # Use semver release tags only; snapshot releases create v*-snapshot git tags
+            # that git describe would pick up and double-append -snapshot.
+            LATEST_TAG="$(git tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)"
+            LATEST_TAG="${LATEST_TAG:-v0.0.0}"
+            echo "tag=${LATEST_TAG}-snapshot" >> "$GITHUB_OUTPUT"
+            echo "snapshot=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: GoReleaser (release)
+        if: steps.release.outputs.snapshot == 'false'
+        uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: GoReleaser (snapshot)
+        if: steps.release.outputs.snapshot == 'true'
+        uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7
+        with:
+          version: "~> v2"
+          args: release --snapshot --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ steps.release.outputs.tag }}
+
+      - name: Stage flat release binaries
+        run: |
+          set -euo pipefail
+          stage() {
+            local os_arch=$1 dest=$2
+            if [ -f "dist/${dest}" ]; then
+              return 0
+            fi
+            local src
+            src=$(find dist -type f -path "dist/goflow-api_${os_arch}_*/goflow-api*" | head -1)
+            test -n "${src}"
+            cp "${src}" "dist/${dest}"
+            chmod +x "dist/${dest}" 2>/dev/null || true
+          }
+          stage linux_amd64 goflow-api-linux-amd64
+          stage linux_arm64 goflow-api-linux-arm64
+          stage darwin_amd64 goflow-api-darwin-amd64
+          stage darwin_arm64 goflow-api-darwin-arm64
+          stage windows_amd64 goflow-api-windows-amd64.exe
+
+      - name: Publish snapshot GitHub release
+        if: steps.release.outputs.snapshot == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          if ! gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release create "${RELEASE_TAG}" \
+              --prerelease \
+              --target "${GITHUB_SHA}" \
+              --title "goflow-api ${RELEASE_TAG}"
+          fi
+          gh release upload "${RELEASE_TAG}" \
+            dist/goflow-api-* \
+            dist/sha256sum.txt \
+            dist/sbom.cyclonedx.json \
+            --clobber
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.1.2
+
+      - name: Sign module SBOM (keyless)
+        env:
+          COSIGN_EXPERIMENTAL: 1
+        run: |
+          test -f dist/sbom.cyclonedx.json
+          cosign sign-blob --yes dist/sbom.cyclonedx.json \
+            --bundle dist/sbom.cyclonedx.json.bundle
+
+      - name: Upload SBOM signatures to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          gh release upload "${RELEASE_TAG}" \
+            dist/sbom.cyclonedx.json.bundle \
+            --clobber
+
+  docker:
+    name: Docker image
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      actions: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set image reference
+        run: echo "IMAGE=${{ env.REGISTRY }}/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}},enable=${{ needs.goreleaser.outputs.is_snapshot == 'false' }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ needs.goreleaser.outputs.is_snapshot == 'false' }}
+            type=raw,value=latest,enable=${{ needs.goreleaser.outputs.is_snapshot == 'false' }}
+            type=raw,value=${{ needs.goreleaser.outputs.release_tag }},enable=${{ needs.goreleaser.outputs.is_snapshot == 'true' }}
+
+      - name: Build and push to GHCR
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+
+      - name: Scan Dockerfile (misconfigurations)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: Dockerfile
+          severity: CRITICAL,HIGH
+          exit-code: 1
+
+      - name: Scan container image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: 1
+          ignore-unfixed: true
+
+      - name: Prepare dist
+        run: mkdir -p dist
+
+      - name: Generate container SBOM (CycloneDX)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+          format: cyclonedx
+          output: dist/sbom-image.cyclonedx.json
+
+      - name: Verify container SBOM
+        run: test -s dist/sbom-image.cyclonedx.json
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.1.2
+
+      - name: Sign image (keyless)
+        env:
+          COSIGN_EXPERIMENTAL: 1
+        run: |
+          cosign sign --yes "${{ env.IMAGE }}@${{ steps.build.outputs.digest }}"
+
+      - name: Attach SBOM attestation
+        env:
+          COSIGN_EXPERIMENTAL: 1
+        run: |
+          cosign attach sbom --sbom dist/sbom-image.cyclonedx.json \
+            "${{ env.IMAGE }}@${{ steps.build.outputs.digest }}"
+
+      - name: Sign container SBOM blob
+        env:
+          COSIGN_EXPERIMENTAL: 1
+        run: |
+          cosign sign-blob --yes dist/sbom-image.cyclonedx.json \
+            --bundle dist/sbom-image.cyclonedx.json.bundle
+
+      - name: Upload signed container SBOM artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: sbom-image-signed
+          path: |
+            dist/sbom-image.cyclonedx.json
+            dist/sbom-image.cyclonedx.json.bundle
