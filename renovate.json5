@@ -1,90 +1,129 @@
 {
-  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
   extends: [
-    "config:recommended",
-    ":dependencyDashboard",
-    ":semanticCommits",
-    ":separateMajorReleases",
+    'config:recommended',
+    ':dependencyDashboard',
+    ':semanticCommits',
+    ':separateMajorReleases',
   ],
-  schedule: ["before 6am on Monday"],
+  schedule: [
+    'before 6am on Monday',
+  ],
   prConcurrentLimit: 5,
-  labels: ["dependencies"],
-  timezone: "UTC",
+  labels: [
+    'dependencies',
+  ],
+  timezone: 'UTC',
   gomod: {
-    postUpdateOptions: ["gomodTidy"],
+    postUpdateOptions: [
+      'gomodTidy',
+    ],
   },
-  "github-actions": {
+  'github-actions': {
     enabled: true,
     pinDigests: true,
   },
   dockerfile: {
     enabled: true,
   },
-  "pre-commit": {
+  'pre-commit': {
     enabled: true,
   },
   customManagers: [
     {
-      customType: "regex",
-      description: "Go install pins in GoReleaser config",
-      fileMatch: ["^\\.goreleaser\\.ya?ml$"],
-      matchStrings: [
-        "go install (?<depName>\\S+)@(?<currentValue>[^\\s]+)",
+      customType: 'regex',
+      description: 'Go install pins in GoReleaser config',
+      managerFilePatterns: [
+        '/^\\.goreleaser\\.ya?ml$/',
       ],
-      datasourceTemplate: "go",
+      matchStrings: [
+        'go install (?<depName>\\S+)@(?<currentValue>[^\\s]+)',
+      ],
+      datasourceTemplate: 'go',
     },
   ],
   packageRules: [
     {
-      description: "Group Docker-related GitHub Actions",
-      groupName: "docker github actions",
-      matchManagers: ["github-actions"],
+      description: 'Group Docker-related GitHub Actions',
+      groupName: 'docker github actions',
+      matchManagers: [
+        'github-actions',
+      ],
       matchPackageNames: [
-        "docker/**",
-        "hadolint/**",
+        'docker/**',
+        'hadolint/**',
       ],
     },
     {
-      description: "Group Trivy action updates across workflows",
-      groupName: "trivy-action",
-      matchManagers: ["github-actions"],
-      matchPackageNames: ["aquasecurity/trivy-action"],
+      description: 'Group Trivy action updates across workflows',
+      groupName: 'trivy-action',
+      matchManagers: [
+        'github-actions',
+      ],
+      matchPackageNames: [
+        'aquasecurity/trivy-action',
+      ],
     },
     {
-      description: "Keep golangci-lint aligned across CI and pre-commit",
-      groupName: "golangci-lint",
-      matchManagers: ["github-actions", "pre-commit"],
-      matchPackagePatterns: ["^golangci/golangci-lint"],
+      description: 'Keep golangci-lint aligned across CI and pre-commit',
+      groupName: 'golangci-lint',
+      matchManagers: [
+        'github-actions',
+        'pre-commit',
+      ],
+      matchPackageNames: [
+        '/^golangci/golangci-lint/',
+      ],
     },
     {
-      description: "Group modernc.org pure-Go SQLite stack",
-      groupName: "modernc",
-      matchManagers: ["gomod"],
-      matchPackageNames: ["modernc.org/**"],
+      description: 'Group modernc.org pure-Go SQLite stack',
+      groupName: 'modernc',
+      matchManagers: [
+        'gomod',
+      ],
+      matchPackageNames: [
+        'modernc.org/**',
+      ],
     },
     {
-      description: "Group golang.org/x indirect dependencies",
-      groupName: "golang.org/x",
-      matchManagers: ["gomod"],
-      matchPackageNames: ["golang.org/x/**"],
+      description: 'Group golang.org/x indirect dependencies',
+      groupName: 'golang.org/x',
+      matchManagers: [
+        'gomod',
+      ],
+      matchPackageNames: [
+        'golang.org/x/**',
+      ],
     },
     {
-      description: "Batch routine pre-commit hook updates",
-      groupName: "pre-commit hooks",
-      matchManagers: ["pre-commit"],
-      excludePackagePatterns: ["^golangci/golangci-lint"],
+      description: 'Batch routine pre-commit hook updates',
+      groupName: 'pre-commit hooks',
+      matchManagers: [
+        'pre-commit',
+      ],
+      matchPackageNames: [
+        '!/^golangci/golangci-lint/',
+      ],
     },
     {
-      description: "Distroless base image used by the runtime Dockerfile",
-      groupName: "distroless",
-      matchManagers: ["dockerfile"],
-      matchPackageNames: ["gcr.io/distroless/**"],
+      description: 'Distroless base image used by the runtime Dockerfile',
+      groupName: 'distroless',
+      matchManagers: [
+        'dockerfile',
+      ],
+      matchPackageNames: [
+        'gcr.io/distroless/**',
+      ],
     },
     {
-      description: "Cosign installer used in release workflows",
-      groupName: "cosign",
-      matchManagers: ["github-actions"],
-      matchPackageNames: ["sigstore/cosign-installer"],
+      description: 'Cosign installer used in release workflows',
+      groupName: 'cosign',
+      matchManagers: [
+        'github-actions',
+      ],
+      matchPackageNames: [
+        'sigstore/cosign-installer',
+      ],
     },
   ],
 }
