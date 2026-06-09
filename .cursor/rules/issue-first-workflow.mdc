@@ -1,0 +1,48 @@
+---
+description: Require a GitHub issue before any commit; close only after merged PR and green CI
+alwaysApply: true
+---
+
+# Issue-first workflow
+
+Every change must be tracked by a GitHub issue before the first commit. Close the issue only after the PR is merged and post-merge checks succeed — never on commit alone.
+
+## 1. Open issue before committing
+
+Create a GitHub issue describing the problem, goal, and acceptance criteria **before** creating a branch or making commits.
+
+## 2. Reference the issue in branch and commits
+
+- Branch name: include the issue number when practical (e.g. `fix/42-pin-signature`).
+- Commit messages: link the issue with `Refs #N` while work is in progress.
+- Use `Fixes #N` or `Closes #N` only when the commit/PR should auto-close the issue on merge.
+
+Example:
+
+```
+fix: pin go-api-signature to v0.3.12
+
+Refs #42
+```
+
+## 3. Open PR linking to the issue
+
+Reference the issue in the PR title or description (e.g. `Refs #42` or `Fixes #42`). Keep the issue updated with scope changes, blockers, review feedback, and CI failures — do not rely on the PR description alone.
+
+## 4. Close issue only after merge and green pipelines
+
+1. Merge the PR.
+2. Confirm GitHub Actions (and any release or deploy workflows) completed successfully on `main`.
+3. If pipelines fail on `main`, keep or reopen the issue, fix forward, and re-verify.
+4. Close the issue only after post-merge pipelines are green.
+
+**Do not close the issue when committing or opening the PR.**
+
+## Agent checklist
+
+- [ ] Issue exists before first commit
+- [ ] Branch and commits reference the issue (`Refs #N` / `Fixes #N`)
+- [ ] PR links to the issue
+- [ ] Issue updated during review and CI
+- [ ] Post-merge pipeline status verified on `main`
+- [ ] Issue closed only after clean post-merge runs
