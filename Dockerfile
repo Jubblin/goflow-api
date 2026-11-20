@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:572cebbc2b15e6f84c077742952674889cb63cd5e9b80abdffcbe587b6f19183
 
 # Distroless runtime image. Expects GoReleaser linux binaries in dist/:
 #   dist/goflow-api-linux-amd64
